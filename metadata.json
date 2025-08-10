@@ -1,0 +1,8 @@
+{
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "name": "Copy of Wonderland",
+  "description": "A reading comprehension game",
+  "prompt": ""
+}
