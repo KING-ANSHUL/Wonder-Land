@@ -102,4 +102,9 @@ export const TOPICS_DATA = {
 
 export type Topic = keyof typeof TOPICS_DATA;
 export const TOPICS = Object.keys(TOPICS_DATA) as Topic[];
+export const TOPIC_IMAGES: Record<Topic, string> =
+  (Object.keys(TOPICS_DATA) as Topic[]).reduce((acc, t) => {
+    acc[t] = TOPICS_DATA[t].image;
+    return acc;
+  }, {} as Record<Topic, string>);
 
