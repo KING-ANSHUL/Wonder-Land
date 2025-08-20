@@ -4,6 +4,7 @@ import { Topic } from '../constants';
 import { MicrophoneIcon } from './icons/MicrophoneIcon';
 import { PracticeSoundIcon } from './icons/PracticeSoundIcon';
 import { StopIcon } from './icons/StopIcon';
+import { guidelines } from '../guidelines';
 
 declare global {
   interface SpeechRecognition {
@@ -58,16 +59,9 @@ interface TalkersCaveGameProps {
   currentLevel: number;
   onBackToTopics: () => void;
   topic: Topic;
+  subTopic: string;
+  language: string;
 }
-
-const getDifficultyDescription = (grade: number, level: number): string => {
-  if (level <= 5) return `at a foundational level for grade ${grade}, using very simple words and short sentences`;
-  if (level <= 15) return `at the core of a grade ${grade} level`;
-  if (level <= 30) return `at the upper end of a grade ${grade} level, introducing slightly more complex sentences and vocabulary`;
-  if (level <= 50) return `at a level that slightly exceeds grade ${grade}, preparing them for the next grade level`;
-  const nextGrade = Math.min(10, grade + 1);
-  return `at a level suitable for grade ${nextGrade}, blending in more advanced content`;
-};
 
 const cleanWord = (word: string) => word.trim().toLowerCase().replace(/[.,?!]/g, '');
 
@@ -165,7 +159,7 @@ const analyzeReadingWithAI = async (spokenText: string, targetText: string): Pro
     }
 };
 
-export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, userGrade, currentLevel, onBackToTopics, topic }) => {
+export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, userGrade, currentLevel, onBackToTopics, topic, subTopic, language }) => {
   const [step, setStep] = useState<Step>('LOADING_PASSAGE');
   const [gamePhase, setGamePhase] = useState<GamePhase>('AI_READING');
   const [passage, setPassage] = useState<string[]>([]);
@@ -190,6 +184,8 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
   const practiceResultHandler = useRef<((event: SpeechRecognitionEvent) => void) | null>(null);
   const mainGameResultHandler = useRef<((event: SpeechRecognitionEvent) => void) | null>(null);
   const resultProcessed = useRef(false);
+
+  const langCode = useMemo(() => (language === 'hi' ? 'hi-IN' : 'en-US'), [language]);
 
   useEffect(() => {
     mainGameResultHandler.current = (event: SpeechRecognitionEvent) => {
@@ -243,7 +239,7 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
     if (!SpeechRecognitionAPI) return;
     
     practiceRecognizer.current = new SpeechRecognitionAPI();
-    practiceRecognizer.current.lang = 'en-US';
+    practiceRecognizer.current.lang = langCode;
     practiceRecognizer.current.continuous = false;
     practiceRecognizer.current.interimResults = false;
     const recognizer = practiceRecognizer.current;
@@ -269,7 +265,7 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
         recognizer.removeEventListener('end', handleEnd as EventListener);
         try { recognizer.abort(); } catch(e) {}
     };
-  }, []);
+  }, [langCode]);
 
   useEffect(() => {
     if (!window.speechSynthesis) return;
@@ -288,7 +284,7 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
     const recognizer = new SpeechRecognitionAPI();
     speechRecognizer.current = recognizer;
 
-    recognizer.lang = 'en-US';
+    recognizer.lang = langCode;
     recognizer.continuous = false;
     recognizer.interimResults = false;
 
@@ -345,7 +341,7 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
       recognizer.removeEventListener('error', handleError as EventListener);
       try { recognizer.abort(); } catch(e){}
     };
-  }, []);
+  }, [langCode]);
 
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise((resolve, reject) => {
@@ -355,7 +351,8 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
         }
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
-        const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en'));
+        const voiceLang = language === 'hi' ? 'hi' : 'en';
+        const englishVoice = voices.find(v => v.lang.startsWith(voiceLang) && v.name.includes('Google')) || voices.find(v => v.lang.startsWith(voiceLang));
         if (englishVoice) utterance.voice = englishVoice;
         utterance.onstart = () => setIsAiSpeaking(true);
         utterance.onend = () => {
@@ -368,7 +365,7 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
         };
         window.speechSynthesis.speak(utterance);
     });
-  }, [voices]);
+  }, [voices, language]);
   
   useEffect(() => {
     if (step === 'ANALYZING') {
@@ -426,21 +423,48 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
   const generatePassageAndImage = useCallback(async () => {
     setError(null); setStep('LOADING_PASSAGE');
     setMistakes([]);
+    
+    const gradeGuidelines = guidelines.grades.find(g => g.grade === userGrade);
+    if (!gradeGuidelines) {
+        console.error(`No guidelines found for grade ${userGrade}`);
+        setError(`Sorry, I couldn't find the educational guidelines for grade ${userGrade}.`);
+        return;
+    }
+    
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-    const difficulty = getDifficultyDescription(userGrade, currentLevel);
     
     try {
-        const passageSystemInstruction = `You are an educational content creator for children. Your task is to generate fun, age-appropriate informational content.
-        **REQUIREMENTS**
-        - The content should be about a specific subject within the given topic.
-        - The content must be broken down into a short passage of 4-6 simple sentences.
-        - The language and complexity must be suitable for a child with these parameters: ${difficulty}.
-        - You must suggest a specific, concrete subject for an image related to the passage (e.g., 'Eiffel Tower', 'Rose', 'Tiger').
-        **RESPONSE FORMAT**
-        - Your entire response MUST be a single, valid JSON object.
-        - Do NOT include markdown code fences.
-        - The object must have two properties: "subject" (string) and "passage" (array of strings).`;
-        const passagePrompt = `Topic: "${topic}". Grade Level: ${userGrade}. Generate a passage and an image subject.`;
+        const languageName = language === 'hi' ? 'Hindi' : 'English';
+
+        const passageSystemInstruction = `You are an expert educational content creator for children learning to read in ${languageName}. Your task is to generate a short, engaging, and age-appropriate informational passage.
+
+**CRITICAL: Adhere strictly to ALL of the following rules for the user's grade level.**
+
+**User Profile:**
+- Grade: ${userGrade}
+- Language: ${languageName}
+- Topic: ${topic}
+- Sub-Topic: ${subTopic}
+
+**Content Generation Rules:**
+1.  **Global Context & Tone:** ${guidelines.global_rules.context}. The tone must be ${guidelines.global_rules.tone}.
+2.  **Reading Level:** The passage should be at this level: "${gradeGuidelines.reading_level_summary}".
+3.  **Word Count:** The total passage must be between ${gradeGuidelines.word_range.min} and ${gradeGuidelines.word_range.max} words.
+4.  **Sentence Structure:** Use only these sentence types: ${gradeGuidelines.sentence_types_allowed.join(', ')}. The passage must be composed of 4-6 simple sentences.
+5.  **Vocabulary:** ${gradeGuidelines.syllables_per_word_target.source_text}.
+6.  **Punctuation:** Only use the following punctuation: ${gradeGuidelines.punctuation_allowed.join(', ')}.
+7.  **Language Control:** ${guidelines.global_rules.language_control}. Avoid rare or archaic words.
+
+**Task:**
+1.  Generate a passage about a specific, concrete subject within the chosen sub-topic ("${subTopic}").
+2.  Suggest a concrete, simple subject for an image that illustrates the passage (e.g., 'Eiffel Tower', 'Rose', 'Tiger').
+
+**RESPONSE FORMAT:**
+- Your entire response MUST be a single, valid JSON object.
+- Do NOT include markdown code fences.
+- The object must have two properties: "subject" (string, for the image) and "passage" (array of strings, where each string is a sentence).`;
+
+        const passagePrompt = `Generate content for a child in Grade ${userGrade} on the sub-topic "${subTopic}" from the main topic "${topic}" in ${languageName}.`;
         const passageSchema = { type: Type.OBJECT, properties: { subject: { type: Type.STRING }, passage: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['subject', 'passage'] };
         
         const passageResponse: GenerateContentResponse = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: passagePrompt, config: { systemInstruction: passageSystemInstruction, responseMimeType: "application/json", responseSchema: passageSchema } });
@@ -459,8 +483,14 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
                 prompt: `A vibrant, child-friendly, adorable illustration of: ${passageResult.subject}. Whimsical storybook style, bright colors, friendly expression.`,
                 config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '1:1' },
             });
-            const base64ImageBytes: string = imageResponse.generatedImages[0].image.imageBytes;
-            setPassageImage(`data:image/jpeg;base64,${base64ImageBytes}`);
+
+            if (imageResponse.generatedImages?.[0]?.image?.imageBytes) {
+                const base64ImageBytes: string = imageResponse.generatedImages[0].image.imageBytes;
+                setPassageImage(`data:image/jpeg;base64,${base64ImageBytes}`);
+            } else {
+                console.warn("Image generation failed or returned no images.");
+                setPassageImage(null);
+            }
             
             setStep('GAME');
             setCurrentLineIndex(0);
@@ -472,7 +502,7 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
       console.error(e); 
       setError('Sorry, I couldn\'t create a story. Please try another topic or level.');
     }
-  }, [userGrade, currentLevel, topic]);
+  }, [userGrade, topic, subTopic, language]);
 
   useEffect(() => {
     generatePassageAndImage();
@@ -529,7 +559,8 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
     if (!window.speechSynthesis || voices.length === 0) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en'));
+    const voiceLang = language === 'hi' ? 'hi' : 'en';
+    const englishVoice = voices.find(v => v.lang.startsWith(voiceLang) && v.name.includes('Google')) || voices.find(v => v.lang.startsWith(voiceLang));
     if (englishVoice) utterance.voice = englishVoice;
     window.speechSynthesis.speak(utterance);
   };
@@ -541,7 +572,7 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
       case 'PRACTICE_PREP': return <div className="text-center text-slate-300 animate-pulse text-2xl">Analyzing words for practice...</div>;
       
       case 'GAME': {
-        if (!passage.length || !passageImage) return null;
+        if (!passage.length) return null;
 
         const getGameStatus = () => {
           if (recognitionError) return <p className="text-red-400 font-semibold">{recognitionError}</p>;
@@ -564,10 +595,12 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
         return (
           <div className='w-full h-full relative flex flex-col overflow-hidden'>
             <div className="flex-grow flex flex-col md:flex-row items-center justify-center gap-8 p-4 sm:p-8">
-              <div className="w-full md:w-1/3 max-w-sm flex-shrink-0">
-                <img src={passageImage} alt={passageSubject} className="rounded-2xl shadow-2xl w-full aspect-square object-cover" />
-              </div>
-              <div className="w-full md:w-2/3 h-full flex flex-col justify-center bg-black/30 rounded-2xl p-6 backdrop-blur-sm no-scrollbar overflow-y-auto">
+              {passageImage && (
+                <div className="w-full md:w-1/3 max-w-sm flex-shrink-0">
+                  <img src={passageImage} alt={passageSubject} className="rounded-2xl shadow-2xl w-full aspect-square object-cover" />
+                </div>
+              )}
+              <div className={`w-full ${passageImage ? 'md:w-2/3' : 'md:w-full max-w-3xl'} h-full flex flex-col justify-center bg-black/30 rounded-2xl p-6 backdrop-blur-sm no-scrollbar overflow-y-auto`}>
                 <h2 className="text-3xl font-bold text-cyan-300 mb-4">{passageSubject}</h2>
                 <div className="space-y-4 text-xl sm:text-2xl text-slate-200 font-medium">
                   {passage.map((line, index) => {
@@ -660,7 +693,7 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
   return (
     <div className="w-full h-full text-white relative flex flex-col justify-center animate-fade-in">
         <div className="absolute top-4 sm:top-6 left-1/2 -translate-x-1/2 w-full px-4 text-center z-20 pointer-events-none">
-             <h1 className="text-3xl sm:text-5xl font-bold text-cyan-400" style={{textShadow: '2px 2px 8px rgba(0,0,0,0.7)'}}>{step === 'PRACTICE' ? "Let's Practice!" : topic}</h1>
+             <h1 className="text-3xl sm:text-5xl font-bold text-cyan-400" style={{textShadow: '2px 2px 8px rgba(0,0,0,0.7)'}}>{step === 'PRACTICE' ? "Let's Practice!" : subTopic}</h1>
         </div>
         <div className="absolute top-4 right-4 sm:top-6 sm:right-6 bg-slate-900/70 px-4 py-2 rounded-lg text-base sm:text-lg font-bold text-cyan-300 z-20 backdrop-blur-sm">
           Level: {currentLevel}
