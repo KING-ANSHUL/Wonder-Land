@@ -478,19 +478,7 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
             setPassageSubject(passageResult.subject);
             setUserTranscripts(Array(fetchedPassage.length).fill(''));
             
-            const imageResponse = await ai.models.generateImages({
-                model: 'imagen-3.0-generate-002',
-                prompt: `A vibrant, child-friendly, adorable illustration of: ${passageResult.subject}. Whimsical storybook style, bright colors, friendly expression.`,
-                config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '1:1' },
-            });
-
-            if (imageResponse.generatedImages?.[0]?.image?.imageBytes) {
-                const base64ImageBytes: string = imageResponse.generatedImages[0].image.imageBytes;
-                setPassageImage(`data:image/jpeg;base64,${base64ImageBytes}`);
-            } else {
-                console.warn("Image generation failed or returned no images.");
-                setPassageImage(null);
-            }
+            setPassageImage(null);
             
             setStep('GAME');
             setCurrentLineIndex(0);
@@ -595,12 +583,12 @@ export const TalkersCaveGame: React.FC<TalkersCaveGameProps> = ({ onComplete, us
         return (
           <div className='w-full h-full relative flex flex-col overflow-hidden'>
             <div className="flex-grow flex flex-col md:flex-row items-center justify-center gap-8 p-4 sm:p-8">
-              {passageImage && (
-                <div className="w-full md:w-1/3 max-w-sm flex-shrink-0">
-                  <img src={passageImage} alt={passageSubject} className="rounded-2xl shadow-2xl w-full aspect-square object-cover" />
+              <div className="w-full md:w-1/3 max-w-sm flex-shrink-0">
+                <div className="rounded-2xl shadow-2xl w-full aspect-square bg-slate-800/50 flex items-center justify-center text-center p-4 border-2 border-slate-700">
+                  <p className="text-slate-400 font-semibold">Gemini API For Image Generation not available</p>
                 </div>
-              )}
-              <div className={`w-full ${passageImage ? 'md:w-2/3' : 'md:w-full max-w-3xl'} h-full flex flex-col justify-center bg-black/30 rounded-2xl p-6 backdrop-blur-sm no-scrollbar overflow-y-auto`}>
+              </div>
+              <div className="w-full md:w-2/3 h-full flex flex-col justify-center bg-black/30 rounded-2xl p-6 backdrop-blur-sm no-scrollbar overflow-y-auto">
                 <h2 className="text-3xl font-bold text-cyan-300 mb-4">{passageSubject}</h2>
                 <div className="space-y-4 text-xl sm:text-2xl text-slate-200 font-medium">
                   {passage.map((line, index) => {
